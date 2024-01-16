@@ -6,6 +6,7 @@ use App\Models\transactions;
 use Illuminate\Http\Request;
 use App\Models\transaction;
 use App\Models\transaction_details;
+use Validator;
 
 use Illuminate\Support\Facades\DB;
 
@@ -25,8 +26,8 @@ class TransactionsController extends Controller
             ->orderBy('transactions.id', 'desc')
             ->get();
 
-        
-        return view('welcome', compact('data'));
+        $status = true;
+        return view('welcome', compact('data','status'));
     }
 
     /**
@@ -47,22 +48,39 @@ class TransactionsController extends Controller
      */
     public function store(Request $request)
     {
-        $transaction = new transactions;
-        $transaction->no_transaction = $request->no_transaction;
-        $transaction->transaction_date = $request->transaction_date;
-        $transaction->save();
-
-        foreach ($request->item as $key => $value) {
-            $data = array(
-                'transaction_id' => $transaction->id,
-                'item' => $request->item[$key],
-                'quantity' => $request->quantity[$key],
-            );
-            transaction_details::insert($data);
+        $validator = Validator::make($request->all(), [
+            'no_transaction' => 'required',
+            'transaction_date' => 'required',
+            'item.*' => 'required|min:1',
+            'quantity.*' => 'required|min:1',
+        ]);
+ 
+        if ($validator->fails()) {
+            return back()->withErrors($validator->errors())->withInput();
         }
-       
-        return back();
 
+        try {
+            DB::beginTransaction();
+            $transaction = new transactions;
+            $transaction->no_transaction = $request->no_transaction;
+            $transaction->transaction_date = $request->transaction_date;
+            $transaction->save();
+
+            foreach ($request->item as $key => $value) {
+                $data = array(
+                    'transaction_id' => $transaction->id,
+                    'item' => $request->item[$key],
+                    'quantity' => $request->quantity[$key],
+                );
+                transaction_details::insert($data);
+            }
+            DB::commit();
+            return back()->with('success', 'Data berhasil ditambahkan');
+        } catch (\Exception $e) {
+            DB::rollback();
+            return back()->withErrors('msg', 'Data gagal ditambahkan');
+        }
+        
     }
 
     /**
@@ -99,12 +117,23 @@ class TransactionsController extends Controller
      */
     public function update(Request $request)
     {
-       
-        $transaction = transactions::find($request->id);
-        $transaction->no_transaction = $request->no_transaction;
-        $transaction->transaction_date = $request->transaction_date;
-        $transaction->save();
-        if ($request->item != null) {
+        $validator = Validator::make($request->all(), [
+            'no_transaction' => 'required',
+            'transaction_date' => 'required',
+            'item.*' => 'required|min:1',
+            'quantity.*' => 'required|min:1',
+        ]);
+ 
+        if ($validator->fails()) {
+            return back()->withErrors($validator->errors())->withInput();
+        }
+
+        try {
+            DB::beginTransaction();
+            $transaction = transactions::find($request->id);
+            $transaction->no_transaction = $request->no_transaction;
+            $transaction->transaction_date = $request->transaction_date;
+            $transaction->save();
 
             $Delete = transaction_details::where('transaction_id',$transaction->id)->get();
             foreach ($Delete as $key => $value) {
@@ -122,10 +151,13 @@ class TransactionsController extends Controller
                 
                 transaction_details::insert($data);
             }
+            DB::commit();
+            return back()->with('success', 'Data berhasil diubah');
+        } catch (\Exception $e) {
+            DB::rollback();
+            return back()->withErrors('msg', 'Data gagal diubah');
         }
-      
 
-        return back();
         
     }
 
@@ -140,7 +172,7 @@ class TransactionsController extends Controller
         $transaction = transactions::find($id);
         $transaction->delete();
        
-        return back();
+        return back()->with('success', 'Data berhasil dihapus');
     }
 
     public function getDataDetail($id)
